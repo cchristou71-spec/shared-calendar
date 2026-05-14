@@ -1,4 +1,4 @@
-name:Daily Calendar Reminders
+name: Daily Calendar Reminders
 
 on:
   schedule:
