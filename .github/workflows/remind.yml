@@ -1,4 +1,4 @@
-name Daily Calendar Reminders
+name: Daily Calendar Reminders
 
 on:
   schedule:
@@ -147,6 +147,6 @@ jobs:
             }
             console.log('Done');
           }
- 
+
           main().catch(console.error);
           SCRIPT
