@@ -9,20 +9,24 @@ on:
 jobs:
   send-reminders:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - name: Send reminder emails
+        timeout-minutes: 2
         env:
           SUPA_URL: ${{ secrets.SUPA_URL }}
           SUPA_KEY: ${{ secrets.SUPA_KEY }}
+          GMAIL_USER: cchristou71@gmail.com
           GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
         run: |
-          npm install nodemailer --silent
-          node << 'SCRIPT'
+          npm install nodemailer --silent 2>/dev/null
+          timeout 90 node << 'SCRIPT'
           const https = require('https');
           const nodemailer = require('nodemailer');
 
           const SUPA_URL = process.env.SUPA_URL;
           const SUPA_KEY = process.env.SUPA_KEY;
+          const GMAIL_USER = process.env.GMAIL_USER;
           const GMAIL_PASS = process.env.GMAIL_PASS;
 
           const RECIPIENTS = {
@@ -31,17 +35,23 @@ jobs:
           };
 
           const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: { user: 'cchristou71@gmail.com', pass: GMAIL_PASS }
+            host: 'smtp.gmail.com',
+            port: 465,
+            secure: true,
+            auth: { user: GMAIL_USER, pass: GMAIL_PASS },
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
+            socketTimeout: 10000
           });
 
           function httpsGet(hostname, path, headers) {
             return new Promise((resolve, reject) => {
-              const req = https.request({ hostname, path, method: 'GET', headers }, res => {
+              const req = https.request({ hostname, path, method: 'GET', headers, timeout: 10000 }, res => {
                 let d = '';
                 res.on('data', c => d += c);
-                res.on('end', () => resolve(JSON.parse(d)));
+                res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
               });
+              req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
               req.on('error', reject);
               req.end();
             });
@@ -54,8 +64,7 @@ jobs:
             const tMonth = tomorrow.getMonth();
             const tDay   = tomorrow.getDate();
             const key    = tYear + '-' + (tMonth + 1) + '-' + tDay;
-
-            console.log('Checking reminders for key:', key);
+            console.log('Key:', key);
 
             const supaHost = SUPA_URL.replace('https://', '').replace(/\/.*/, '');
             const rows = await httpsGet(supaHost, '/rest/v1/calendar_events?id=eq.shared&select=data', {
@@ -63,41 +72,36 @@ jobs:
               Authorization: 'Bearer ' + SUPA_KEY
             });
 
-            if (!rows || !rows[0] || !rows[0].data) {
-              console.log('No data found');
-              return;
-            }
+            if (!rows || !rows[0] || !rows[0].data) { console.log('No data'); return; }
 
-            const events = rows[0].data;
-            const dayEvents = events[key] || [];
-            console.log('Events tomorrow:', dayEvents.length);
-
-            const toRemind = dayEvents.filter(ev => ev.reminders && ev.reminders.length > 0);
-            console.log('Events with reminders:', toRemind.length);
+            const dayEvents = rows[0].data[key] || [];
+            const toRemind  = dayEvents.filter(ev => ev.reminders && ev.reminders.length > 0);
+            console.log('Events:', dayEvents.length, 'With reminders:', toRemind.length);
 
             const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
             const dateStr = MONTHS[tMonth] + ' ' + tDay + ' ' + tYear;
 
             for (const ev of toRemind) {
-              for (const recipKey of ev.reminders) {
-                const recipient = RECIPIENTS[recipKey];
-                if (!recipient) continue;
-                const timeStr = ev.timeStart ? (ev.timeEnd ? ev.timeStart + ' - ' + ev.timeEnd : ev.timeStart) : 'All day';
+              for (const k of ev.reminders) {
+                const r = RECIPIENTS[k];
+                if (!r) continue;
+                const timeStr = ev.timeStart ? (ev.timeEnd ? ev.timeStart+' - '+ev.timeEnd : ev.timeStart) : 'All day';
                 try {
                   await transporter.sendMail({
-                    from: '"Our Calendar" <cchristou71@gmail.com>',
-                    to: recipient.email,
+                    from: '"Our Calendar" <' + GMAIL_USER + '>',
+                    to: r.email,
                     subject: 'Reminder: ' + ev.title + ' tomorrow',
-                    text: 'Hi ' + recipient.name + ',\n\nReminder that you have an event tomorrow:\n\nEvent: ' + ev.title + '\nDate: ' + dateStr + '\nTime: ' + timeStr + '\n\nOur Calendar'
+                    text: 'Hi ' + r.name + ',\n\nReminder for tomorrow:\n\nEvent: ' + ev.title + '\nDate: ' + dateStr + '\nTime: ' + timeStr + '\n\nOur Calendar'
                   });
-                  console.log('Email sent to', recipient.name);
+                  console.log('Sent to', r.name);
                 } catch(e) {
-                  console.error('Failed to send to', recipient.name, ':', e.message);
+                  console.error('Failed:', r.name, e.message);
                 }
               }
             }
             console.log('Done');
+            process.exit(0);
           }
 
-          main().catch(console.error);
+          main().catch(e => { console.error(e.message); process.exit(1); });
           SCRIPT
