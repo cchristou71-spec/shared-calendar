@@ -63,7 +63,7 @@ jobs:
             const tYear  = tomorrow.getFullYear();
             const tMonth = tomorrow.getMonth();
             const tDay   = tomorrow.getDate();
-            const key    = tYear + '-' + (tMonth + 1) + '-' + tDay;
+            const key    = tYear + '-' + tMonth + '-' + tDay; // month is 0-indexed in stored data
             console.log('Key:', key);
 
             const supaHost = SUPA_URL.replace('https://', '').replace(/\/.*/, '');
