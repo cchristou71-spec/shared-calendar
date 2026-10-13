@@ -277,6 +277,21 @@ function contDates(startD, endD){
   }
   return result;
 }
+function recurDates(date,mode,count){
+  const out=[];
+  for(let i=1;i<=count;i++){
+    if(mode==="weekly"){
+      const d=new Date(date.year,date.month,date.day+7*i);
+      out.push({year:d.getFullYear(),month:d.getMonth(),day:d.getDate()});
+    } else {
+      const m=date.month+i;
+      const y=date.year+Math.floor(m/12);
+      const mm=m%12;
+      out.push({year:y,month:mm,day:Math.min(date.day,getDaysInMonth(y,mm))});
+    }
+  }
+  return out;
+}
 function sortedEvents(evs){
   return [...evs].sort((a,b)=>{
     const ta=a.timeStart?parseInt(a.timeStart.replace(":","")):-1;
@@ -318,25 +333,30 @@ function TimePicker({label, value, onChange, userInk, lbl}){
 }
 
 // ── Event Modal ───────────────────────────────────────────────────────────────
-function EventModal({date:initDate, event, onSave, onDelete, onClose}){
+function EventModal({date:initDate, event, prefill, onSave, onDelete, onCopy, onClose}){
+  const src=event||prefill;
   const [startDay,   setStartDay]   = useState(initDate.day);
   const [startMonth, setStartMonth] = useState(initDate.month);
   const [startYear,  setStartYear]  = useState(initDate.year);
-  const [title,     setTitle]     = useState(event?.title    ||"");
-  const [timeStart, setTimeStart] = useState(event?.timeStart||"");
-  const [timeEnd,   setTimeEnd]   = useState(event?.timeEnd  ||"");
+  const [title,     setTitle]     = useState(src?.title    ||"");
+  const [timeStart, setTimeStart] = useState(src?.timeStart||"");
+  const [timeEnd,   setTimeEnd]   = useState(src?.timeEnd  ||"");
   const [endDay,    setEndDay]    = useState(event?.endDay   ||"");
   const [endMonth,  setEndMonth]  = useState(event?.endMonth !==undefined?event.endMonth:"");
   const [endYear,   setEndYear]   = useState(event?.endYear  !==undefined?event.endYear:"");
-  const [note,      setNote]      = useState(event?.note     ||"");
-  const [multiDay,  setMultiDay]  = useState(!!(event?.endDay));
+  const [note,      setNote]      = useState(src?.note     ||"");
+  const [multiDay,  setMultiDay]  = useState(!!(event?.endDay)||!!(prefill&&prefill.multiDay));
   const isEdit=!!event;
-  const initType = event?.eventType||DEFAULT_TYPE;
+  const initType = src?.eventType||DEFAULT_TYPE;
   const initTypeObj = EVENT_TYPES.find(t=>t.id===initType)||EVENT_TYPES[0];
-  const [colour, setColour] = useState(initTypeObj.defaultColour || event?.colour || DEFAULT_COLOUR);
+  const [colour, setColour] = useState(prefill?.colour || initTypeObj.defaultColour || event?.colour || DEFAULT_COLOUR);
   const [eventType, setEventType] = useState(initType);
-  const [repeatYears, setRepeatYears] = useState(event?.repeatYears||10);
-  const [reminders, setReminders] = useState(event?.reminders||[]);
+  const [repeatYears, setRepeatYears] = useState(src?.repeatYears||10);
+  const [reminders, setReminders] = useState(src?.reminders||[]);
+  const [reminders1w, setReminders1w] = useState(src?.reminders1w||[]);
+  const [repeat, setRepeat] = useState(event?.repeat||"");
+  const [repeatCount, setRepeatCount] = useState(event?.repeatCount||12);
+  const isRecurChild=!!event?.recurParentId;
   const startDimDays=getDaysInMonth(startYear,startMonth);
   const endDimDays=getDaysInMonth(
     endYear!==""?parseInt(endYear):startYear,
@@ -346,7 +366,12 @@ function EventModal({date:initDate, event, onSave, onDelete, onClose}){
   const save=()=>{
     if(!title.trim())return;
     const date={year:startYear,month:startMonth,day:startDay};
-    const entry={id:event?.id||generateId(),title:title.trim(),timeStart,timeEnd,note:note.trim(),colour:event?.colour||colour,eventType,repeatYears:eventType==='birthday'?parseInt(repeatYears):undefined,reminders,date};
+    const entry={id:event?.id||generateId(),title:title.trim(),timeStart,timeEnd,note:note.trim(),colour:event?.colour||colour,eventType,repeatYears:eventType==='birthday'?parseInt(repeatYears):undefined,reminders,reminders1w,date};
+    if(event?.recurParentId) entry.recurParentId=event.recurParentId;
+    if(!isRecurChild&&repeat&&!multiDay&&eventType!=='birthday'){
+      entry.repeat=repeat;
+      entry.repeatCount=Math.max(1,Math.min(60,parseInt(repeatCount)||1));
+    }
     if(multiDay&&endDay){
       entry.endDay=parseInt(endDay);
       entry.endMonth=endMonth!==""?parseInt(endMonth):startMonth;
@@ -354,13 +379,17 @@ function EventModal({date:initDate, event, onSave, onDelete, onClose}){
     }
     onSave(entry);
   };
+  const copyEvent=()=>{
+    if(!onCopy)return;
+    onCopy({date:{year:startYear,month:startMonth,day:startDay},prefill:{title,timeStart,timeEnd,note,colour,eventType,reminders,reminders1w,repeatYears,multiDay}});
+  };
   const sel={fontFamily:SF,fontSize:13,border:"none",borderBottom:`1.5px solid ${colour}44`,background:"transparent",outline:"none",padding:"2px 0",color:colour};
   const lbl={fontFamily:SF,fontSize:10,color:"#b0bec8",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:3};
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.32)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:500,backdropFilter:"blur(2px)"}} onClick={onClose}>
       <div style={{background:"#fff",width:"min(460px,96vw)",maxHeight:"92vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.22)",border:"1px solid #dde4ec",padding:"20px 22px 18px"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
-          <div style={{fontFamily:SF,fontSize:12,fontWeight:700,color:"#5a7fa8",letterSpacing:"0.08em",textTransform:"uppercase"}}>{isEdit?"Edit Entry":"New Entry"}</div>
+          <div style={{fontFamily:SF,fontSize:12,fontWeight:700,color:"#5a7fa8",letterSpacing:"0.08em",textTransform:"uppercase"}}>{isEdit?"Edit Entry":(prefill?"Copy of Entry":"New Entry")}</div>
           <div style={{display:"flex",gap:5,flexWrap:"wrap",maxWidth:140,justifyContent:"flex-end"}}>
             {COLOURS.map(c=>(
               <div key={c} onClick={()=>setColour(c)} style={{width:colour===c?20:14,height:colour===c?20:14,borderRadius:"50%",background:c,cursor:"pointer",border:colour===c?"2.5px solid #fff":"1.5px solid rgba(0,0,0,0.15)",boxShadow:colour===c?`0 0 0 2px ${c}`:"none",transition:"all 0.15s",flexShrink:0}}/>
@@ -405,6 +434,7 @@ function EventModal({date:initDate, event, onSave, onDelete, onClose}){
         <div style={{display:"flex",gap:8,marginBottom:14}}>
           <button onClick={save} style={{fontFamily:SF,fontSize:13,fontWeight:700,background:colour,color:"#fff",border:"none",padding:"8px 22px",cursor:"pointer"}}>{isEdit?"Save":"Add"}</button>
           {isEdit&&<button onClick={()=>onDelete(event.id)} style={{fontFamily:SF,fontSize:13,background:"#f5f5f5",color:"#999",border:"1px solid #e0e0e0",padding:"8px 16px",cursor:"pointer"}}>Delete</button>}
+          {isEdit&&<button onClick={copyEvent} style={{fontFamily:SF,fontSize:13,background:"#eef4fb",color:"#2d5f8a",border:"1px solid #c9dbee",padding:"8px 16px",cursor:"pointer"}}>Copy</button>}
           <button onClick={onClose} style={{fontFamily:SF,fontSize:13,background:"none",color:"#bbb",border:"1px solid #e8e8e8",padding:"8px 16px",cursor:"pointer"}}>Cancel</button>
         </div>
         <div style={{marginBottom:14}}>
@@ -467,22 +497,62 @@ function EventModal({date:initDate, event, onSave, onDelete, onClose}){
           <div style={lbl}>Note</div>
           <textarea style={{fontFamily:HF,fontSize:16,color:colour,width:"100%",border:"none",borderBottom:`1.5px solid ${colour}44`,outline:"none",resize:"vertical",height:44,background:"transparent",display:"block",padding:"2px 0"}} value={note} onChange={e=>setNote(e.target.value)} placeholder="optional"/>
         </div>
-        <div style={{marginBottom:14,padding:"10px 12px",background:"#f4f8fc",border:"1px solid #dde8f4"}}>
-          <div style={{fontFamily:SF,fontSize:10,color:"#b0bec8",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8}}>Send reminder 1 day before?</div>
-          <div style={{display:"flex",gap:20}}>
-            {[["cos","Cos"],["carolyn","Carolyn"]].map(function(pair){
-              var key=pair[0]; var name=pair[1];
-              return(
-                <label key={key} style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
-                  <input type="checkbox" checked={reminders.indexOf(key)!==-1} onChange={function(e){
-                    setReminders(function(prev){return e.target.checked?prev.concat([key]):prev.filter(function(r){return r!==key;});});
-                  }} style={{width:16,height:16,cursor:"pointer"}}/>
-                  <span style={{fontFamily:SF,fontSize:13,color:"#5a7fa8",fontWeight:600}}>{name}</span>
-                </label>
-              );
-            })}
+        {[["Send reminder 1 day before?",reminders,setReminders],["Send reminder 1 week before?",reminders1w,setReminders1w]].map(function(blk){
+          var label=blk[0]; var vals=blk[1]; var setVals=blk[2];
+          return(
+            <div key={label} style={{marginBottom:14,padding:"10px 12px",background:"#f4f8fc",border:"1px solid #dde8f4"}}>
+              <div style={{fontFamily:SF,fontSize:10,color:"#b0bec8",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8}}>{label}</div>
+              <div style={{display:"flex",gap:20}}>
+                {[["cos","Cos"],["carolyn","Carolyn"]].map(function(pair){
+                  var key=pair[0]; var name=pair[1];
+                  return(
+                    <label key={key} style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
+                      <input type="checkbox" checked={vals.indexOf(key)!==-1} onChange={function(e){
+                        var on=e.target.checked;
+                        setVals(function(prev){return on?prev.concat([key]):prev.filter(function(r){return r!==key;});});
+                      }} style={{width:16,height:16,cursor:"pointer"}}/>
+                      <span style={{fontFamily:SF,fontSize:13,color:"#5a7fa8",fontWeight:600}}>{name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {isRecurChild&&(
+          <div style={{marginBottom:14,padding:"10px 12px",background:"#f4f8fc",border:"1px solid #dde8f4",fontFamily:SF,fontSize:12,color:"#5a7fa8"}}>
+            Part of a repeating series. Changes here apply to this date only. To change the whole series, edit the first entry.
           </div>
-        </div>
+        )}
+        {!isRecurChild&&!multiDay&&eventType!=="birthday"&&(
+          <div style={{marginBottom:14,padding:"10px 12px",background:"#f4f8fc",border:"1px solid #dde8f4"}}>
+            <div style={{...lbl,marginBottom:8}}>Repeat</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {[["","None"],["weekly","Weekly"],["monthly","Monthly"]].map(function(o){
+                var on=repeat===o[0];
+                return(
+                  <div key={o[0]} onClick={()=>setRepeat(o[0])} style={{padding:"4px 14px",borderRadius:20,cursor:"pointer",border:`1.5px solid ${on?colour:"#dde4ec"}`,background:on?`${colour}15`:"#f8f9fa",fontFamily:SF,fontSize:12,fontWeight:on?700:400,color:on?colour:"#7a8fa8"}}>{o[1]}</div>
+                );
+              })}
+            </div>
+            {repeat&&(function(){
+              var n=Math.max(1,Math.min(60,parseInt(repeatCount)||1));
+              var last=recurDates({year:startYear,month:startMonth,day:startDay},repeat,n).pop();
+              var lastName=DAY_NAMES[new Date(last.year,last.month,last.day).getDay()];
+              return(
+                <div style={{marginTop:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontFamily:SF,fontSize:12,color:"#a0b0c0"}}>Repeat</span>
+                    <input type="number" min="1" max="60" style={{fontFamily:SF,fontSize:16,color:colour,width:60,border:"none",borderBottom:`1.5px solid ${colour}44`,outline:"none",padding:"2px 4px",background:"transparent",textAlign:"center"}} value={repeatCount} onChange={e=>setRepeatCount(e.target.value)}/>
+                    <span style={{fontFamily:SF,fontSize:12,color:"#a0b0c0"}}>more times</span>
+                  </div>
+                  <div style={{fontFamily:SF,fontSize:11,color:"#8aabcc",marginTop:5}}>Last one: {lastName}, {MONTHS[last.month]} {last.day} {last.year}{isEdit?" (saving rebuilds the other dates in this series)":""}</div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
 
         {eventType==="birthday"&&(
           <div style={{marginBottom:16,padding:"10px 12px",background:"#fff8f8",border:"1px solid #f5c6c6"}}>
@@ -961,7 +1031,20 @@ function App(){
         for(const yid of oldYearlyIds) next=removeById(next,yid);
       }
 
-      next=upsert(next,entry.date,{...entry,endEntryId:endEntryId||undefined,contEntryIds:Object.keys(newContEntryIds).length>0?newContEntryIds:undefined,yearlyIds:yearlyIds.length>0?yearlyIds:oldYearlyIds});
+      // ── Weekly / monthly repeat logic ──
+      const oldRecurIds=oldEntry?.recurIds||[];
+      let recurIds=[];
+      if(!entry.recurParentId){
+        for(const rid of oldRecurIds) next=removeById(next,rid);
+        if(entry.repeat&&entry.repeatCount>0&&!hasNewEnd&&entry.eventType!=="birthday"){
+          for(const d of recurDates(entry.date,entry.repeat,entry.repeatCount)){
+            const rid=generateId();
+            recurIds.push(rid);
+            next=upsert(next,d,{id:rid,title:entry.title,timeStart:entry.timeStart||"",timeEnd:entry.timeEnd||"",note:entry.note||"",colour:entry.colour||DEFAULT_COLOUR,eventType:entry.eventType,reminders:entry.reminders||[],reminders1w:entry.reminders1w||[],recurParentId:entry.id,date:d});
+          }
+        }
+      }
+      next=upsert(next,entry.date,{...entry,recurIds:recurIds.length>0?recurIds:undefined,endEntryId:endEntryId||undefined,contEntryIds:Object.keys(newContEntryIds).length>0?newContEntryIds:undefined,yearlyIds:yearlyIds.length>0?yearlyIds:oldYearlyIds});
       saveEvents(next);return next;
     });
     setModal(null);
@@ -977,6 +1060,7 @@ function App(){
       if(target?.endEntryId)next=removeById(next,target.endEntryId);
       if(target?.contEntryIds){for(const cid of Object.values(target.contEntryIds))next=removeById(next,cid);}
       if(target?.yearlyIds){for(const yid of target.yearlyIds)next=removeById(next,yid);}
+      if(target?.recurIds){for(const rid of target.recurIds)next=removeById(next,rid);}
       setSaving(true);
       dbSave(next).finally(()=>setSaving(false));
       return next;
@@ -1020,6 +1104,7 @@ function App(){
         if(ev.endEntryId)childIds.add(ev.endEntryId);
         if(ev.contEntryIds)Object.values(ev.contEntryIds).forEach(id=>childIds.add(id));
         if(ev.yearlyIds)ev.yearlyIds.forEach(id=>childIds.add(id));
+        if(ev.recurIds)ev.recurIds.forEach(id=>childIds.add(id));
       }
     }
     for(const arr of Object.values(events)){
@@ -1093,7 +1178,7 @@ function App(){
           <span style={{fontFamily:SF,fontSize:16,color:"#a0b0c0"}}>Loading…</span>
         </div>
       )}
-      {modal&&<EventModal date={modal.date} event={modal.event} onSave={handleSave} onDelete={handleDelete} onClose={()=>setModal(null)}/>}
+      {modal&&<EventModal key={modal.key||"m"} date={modal.date} event={modal.event} prefill={modal.prefill} onSave={handleSave} onDelete={handleDelete} onCopy={c=>setModal({date:c.date,prefill:c.prefill,key:"copy"+Date.now()})} onClose={()=>setModal(null)}/>}
     </div>
   );
 }
