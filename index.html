@@ -978,6 +978,8 @@ function App(){
   const [deletedBH, setDeletedBH] = useState([]);
   const [searchOpen,setSearchOpen]=useState(false);
   const [searchText,setSearchText]=useState("");
+  const [pickerOpen,setPickerOpen]=useState(false);
+  const [pickYear,setPickYear]=useState(now.year);
 
   useEffect(()=>{
         fetch(SUPA_URL+"/rest/v1/calendar_events?id=eq.deleted_bh&select=data",{headers:{apikey:SUPA_KEY,Authorization:"Bearer "+SUPA_KEY}}).then(function(r){return r.json();}).then(function(rows){if(rows&&rows[0]&&rows[0].data&&rows[0].data.length)setDeletedBH(rows[0].data);}).catch(function(){});
@@ -1167,14 +1169,12 @@ function App(){
       for(const ev of arr){
         if(ev.endEntryId)childIds.add(ev.endEntryId);
         if(ev.contEntryIds)Object.values(ev.contEntryIds).forEach(id=>childIds.add(id));
-        if(ev.yearlyIds)ev.yearlyIds.forEach(id=>childIds.add(id));
-        if(ev.recurIds)ev.recurIds.forEach(id=>childIds.add(id));
       }
     }
     for(const arr of Object.values(events)){
       for(const ev of arr){
         if(childIds.has(ev.id))continue;
-        if(ev.date&&ev.title&&ev.title.toLowerCase().includes(searchQuery)&&dateInt(ev.date.year,ev.date.month,ev.date.day)>dateInt(now.year,now.month,now.day)){
+        if(ev.date&&ev.title&&ev.title.toLowerCase().includes(searchQuery)){
           searchResults.push(ev);
         }
       }
@@ -1193,7 +1193,7 @@ function App(){
                 type="text"
                 value={searchText}
                 onChange={e=>setSearchText(e.target.value)}
-                placeholder="Search events…"
+                placeholder="Search all events…"
                 style={{width:"100%",fontFamily:SF,fontSize:14,padding:"6px 10px",border:"1px solid #2d5f8a",borderRadius:6,outline:"none",color:"#1a3a6b",minWidth:0}}
               />
             </div>
@@ -1201,9 +1201,10 @@ function App(){
           </>
         ):(
           <>
-            <div style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0,overflow:"hidden"}}>
+            <div onClick={()=>{setPickYear(year);setPickerOpen(o=>!o);}} title="Jump to month / year" style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0,overflow:"hidden",cursor:"pointer"}}>
               <span style={{fontFamily:SF,fontSize:20,fontWeight:700,color:"#1a3a6b"}}>{MONTHS[month].toUpperCase()}</span>
               <span style={{fontFamily:SF,fontSize:14,color:"#5a7fa8",fontWeight:500}}>{year}</span>
+              <span style={{fontFamily:SF,fontSize:12,color:"#5a7fa8"}}>▾</span>
               {saving&&<span style={{fontFamily:SF,fontSize:11,color:"#8aabcc",marginLeft:8}}>saving…</span>}
             </div>
             <div style={{display:"flex",gap:7,alignItems:"center",flexShrink:0}}>
@@ -1215,15 +1216,40 @@ function App(){
           </>
         )}
       </div>
+      {pickerOpen&&!searchOpen&&(
+        <>
+          <div onClick={()=>setPickerOpen(false)} style={{position:"fixed",inset:0,zIndex:390}}/>
+          <div style={{position:"fixed",top:46,left:6,zIndex:400,background:"#fff",border:"1px solid #dde4ec",boxShadow:"0 6px 24px rgba(0,0,0,0.2)",padding:12,width:"min(290px,94vw)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              {[["«",-5],["‹",-1]].map(([l,d])=>(
+                <button key={l} onClick={()=>setPickYear(y=>y+d)} style={{fontFamily:SF,fontSize:15,fontWeight:700,background:"#2d5f8a",color:"#fff",border:"none",padding:"4px 11px",cursor:"pointer"}}>{l}</button>
+              ))}
+              <span style={{fontFamily:SF,fontSize:18,fontWeight:700,color:"#1a3a6b"}}>{pickYear}</span>
+              {[["›",1],["»",5]].map(([l,d])=>(
+                <button key={l} onClick={()=>setPickYear(y=>y+d)} style={{fontFamily:SF,fontSize:15,fontWeight:700,background:"#2d5f8a",color:"#fff",border:"none",padding:"4px 11px",cursor:"pointer"}}>{l}</button>
+              ))}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+              {MONTH_SHORT.map((mn,i)=>{
+                const sel=pickYear===year&&i===month;
+                const isNow=pickYear===now.year&&i===now.month;
+                return(
+                  <button key={i} onClick={()=>{setYear(pickYear);setMonth(i);setPickerOpen(false);}} style={{fontFamily:SF,fontSize:14,fontWeight:sel?700:500,padding:"9px 0",cursor:"pointer",background:sel?"#2d5f8a":"#f4f8fc",color:sel?"#fff":"#1a3a6b",border:isNow?"1.5px solid #2d5f8a":"1px solid #dde8f4"}}>{mn}</button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
       {searchOpen?(
         <div style={{flex:1,overflowY:"auto",padding:"4px 12px 12px"}}>
           {!searchQuery?(
-            <div style={{fontFamily:SF,fontSize:14,color:"#a0b0c0",padding:"16px 4px"}}>Type to search upcoming events…</div>
+            <div style={{fontFamily:SF,fontSize:14,color:"#a0b0c0",padding:"16px 4px"}}>Type to search all events (all years)…</div>
           ):searchResults.length===0?(
-            <div style={{fontFamily:SF,fontSize:14,color:"#a0b0c0",padding:"16px 4px"}}>No matching upcoming events.</div>
+            <div style={{fontFamily:SF,fontSize:14,color:"#a0b0c0",padding:"16px 4px"}}>No matching events.</div>
           ):(
             searchResults.map(ev=>(
-              <div key={ev.id} onClick={()=>goToSearchResult(ev)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 6px",borderBottom:"1px solid #eef2f7",cursor:"pointer"}}>
+              <div key={ev.id} onClick={()=>goToSearchResult(ev)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 6px",borderBottom:"1px solid #eef2f7",cursor:"pointer",opacity:dateInt(ev.date.year,ev.date.month,ev.date.day)<dateInt(now.year,now.month,now.day)?0.55:1}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                   <span style={{width:9,height:9,borderRadius:"50%",background:ev.colour||DEFAULT_COLOUR,flexShrink:0}}></span>
                   <span style={{fontFamily:HF,fontSize:17,color:"#1a3a6b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ev.title}</span>
