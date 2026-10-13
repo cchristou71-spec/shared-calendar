@@ -277,17 +277,44 @@ function contDates(startD, endD){
   }
   return result;
 }
-function recurDates(date,mode,count){
+function ordinal(n){return ["","1st","2nd","3rd","4th","5th"][n]||(n+"th");}
+function monthPatterns(date){
+  const wd=new Date(date.year,date.month,date.day).getDay();
+  const dim=getDaysInMonth(date.year,date.month);
+  const nth=Math.ceil(date.day/7);
+  const isLast=date.day+7>dim;
+  const dn=DAY_NAMES[wd];
+  const out=[["date","On the "+ordinal2(date.day)+" of each month"]];
+  if(nth<=4) out.push(["nth","On the "+ordinal(nth)+" "+dn+" of each month"]);
+  if(isLast) out.push(["last","On the last "+dn+" of each month"]);
+  return out;
+}
+function ordinal2(n){const v=n%100;if(v>=11&&v<=13)return n+"th";return n+(["th","st","nd","rd"][n%10]||"th");}
+function recurDates(date,mode,count,interval,monthMode){
   const out=[];
+  const step=Math.max(1,parseInt(interval)||1);
+  const wd=new Date(date.year,date.month,date.day).getDay();
+  const nth=Math.ceil(date.day/7);
   for(let i=1;i<=count;i++){
     if(mode==="weekly"){
-      const d=new Date(date.year,date.month,date.day+7*i);
+      const d=new Date(date.year,date.month,date.day+7*step*i);
       out.push({year:d.getFullYear(),month:d.getMonth(),day:d.getDate()});
     } else {
-      const m=date.month+i;
+      const m=date.month+step*i;
       const y=date.year+Math.floor(m/12);
       const mm=m%12;
-      out.push({year:y,month:mm,day:Math.min(date.day,getDaysInMonth(y,mm))});
+      const dim=getDaysInMonth(y,mm);
+      let day;
+      if(monthMode==="nth"){
+        const wd0=new Date(y,mm,1).getDay();
+        day=1+((wd-wd0+7)%7)+7*(nth-1);
+      } else if(monthMode==="last"){
+        const lastWd=new Date(y,mm,dim).getDay();
+        day=dim-((lastWd-wd+7)%7);
+      } else {
+        day=Math.min(date.day,dim);
+      }
+      out.push({year:y,month:mm,day});
     }
   }
   return out;
@@ -356,6 +383,8 @@ function EventModal({date:initDate, event, prefill, onSave, onDelete, onCopy, on
   const [reminders1w, setReminders1w] = useState(src?.reminders1w||[]);
   const [repeat, setRepeat] = useState(event?.repeat||"");
   const [repeatCount, setRepeatCount] = useState(event?.repeatCount||12);
+  const [repeatInterval, setRepeatInterval] = useState(event?.repeatInterval||1);
+  const [repeatMonthMode, setRepeatMonthMode] = useState(event?.repeatMonthMode||"date");
   const isRecurChild=!!event?.recurParentId;
   const startDimDays=getDaysInMonth(startYear,startMonth);
   const endDimDays=getDaysInMonth(
@@ -371,6 +400,8 @@ function EventModal({date:initDate, event, prefill, onSave, onDelete, onCopy, on
     if(!isRecurChild&&repeat&&!multiDay&&eventType!=='birthday'){
       entry.repeat=repeat;
       entry.repeatCount=Math.max(1,Math.min(60,parseInt(repeatCount)||1));
+      entry.repeatInterval=Math.max(1,Math.min(12,parseInt(repeatInterval)||1));
+      if(repeat==='monthly') entry.repeatMonthMode=repeatMonthMode;
     }
     if(multiDay&&endDay){
       entry.endDay=parseInt(endDay);
@@ -431,7 +462,7 @@ function EventModal({date:initDate, event, prefill, onSave, onDelete, onCopy, on
           <input autoFocus style={{fontFamily:HF,fontSize:20,color:colour,width:"100%",border:"none",borderBottom:`1.5px solid ${colour}44`,outline:"none",padding:"2px 0",background:"transparent"}} value={title} onChange={e=>setTitle(e.target.value)} placeholder="What's happening?" onKeyDown={e=>e.key==="Enter"&&save()}/>
         </div>
         {/* Action buttons near top */}
-        <div style={{display:"flex",gap:8,marginBottom:14}}>
+        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
           <button onClick={save} style={{fontFamily:SF,fontSize:13,fontWeight:700,background:colour,color:"#fff",border:"none",padding:"8px 22px",cursor:"pointer"}}>{isEdit?"Save":"Add"}</button>
           {isEdit&&<button onClick={()=>onDelete(event.id)} style={{fontFamily:SF,fontSize:13,background:"#f5f5f5",color:"#999",border:"1px solid #e0e0e0",padding:"8px 16px",cursor:"pointer"}}>Delete</button>}
           {isEdit&&<button onClick={copyEvent} style={{fontFamily:SF,fontSize:13,background:"#eef4fb",color:"#2d5f8a",border:"1px solid #c9dbee",padding:"8px 16px",cursor:"pointer"}}>Copy</button>}
@@ -538,14 +569,39 @@ function EventModal({date:initDate, event, prefill, onSave, onDelete, onCopy, on
             </div>
             {repeat&&(function(){
               var n=Math.max(1,Math.min(60,parseInt(repeatCount)||1));
-              var last=recurDates({year:startYear,month:startMonth,day:startDay},repeat,n).pop();
+              var iv=Math.max(1,Math.min(12,parseInt(repeatInterval)||1));
+              var sd={year:startYear,month:startMonth,day:startDay};
+              var pats=monthPatterns(sd);
+              var mm=pats.some(function(x){return x[0]===repeatMonthMode;})?repeatMonthMode:"date";
+              var last=recurDates(sd,repeat,n,iv,mm).pop();
               var lastName=DAY_NAMES[new Date(last.year,last.month,last.day).getDay()];
+              var numStyle={fontFamily:SF,fontSize:16,color:colour,width:50,border:"none",borderBottom:`1.5px solid ${colour}44`,outline:"none",padding:"2px 4px",background:"transparent",textAlign:"center"};
+              var tx={fontFamily:SF,fontSize:12,color:"#a0b0c0"};
               return(
                 <div style={{marginTop:10}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10}}>
-                    <span style={{fontFamily:SF,fontSize:12,color:"#a0b0c0"}}>Repeat</span>
-                    <input type="number" min="1" max="60" style={{fontFamily:SF,fontSize:16,color:colour,width:60,border:"none",borderBottom:`1.5px solid ${colour}44`,outline:"none",padding:"2px 4px",background:"transparent",textAlign:"center"}} value={repeatCount} onChange={e=>setRepeatCount(e.target.value)}/>
-                    <span style={{fontFamily:SF,fontSize:12,color:"#a0b0c0"}}>more times</span>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <span style={tx}>Every</span>
+                    <input type="number" min="1" max="12" style={numStyle} value={repeatInterval} onChange={e=>setRepeatInterval(e.target.value)}/>
+                    <span style={tx}>{repeat==="weekly"?(iv===1?"week":"weeks"):(iv===1?"month":"months")}</span>
+                  </div>
+                  {repeat==="monthly"&&(
+                    <div style={{marginTop:10}}>
+                      <div style={{...lbl,marginBottom:6}}>Which day each month?</div>
+                      {pats.map(function(o){
+                        var on=mm===o[0];
+                        return(
+                          <label key={o[0]} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",marginBottom:5}}>
+                            <input type="radio" name="monthmode" checked={on} onChange={()=>setRepeatMonthMode(o[0])} style={{width:16,height:16}}/>
+                            <span style={{fontFamily:SF,fontSize:13,color:on?colour:"#5a7fa8",fontWeight:on?700:400}}>{o[1]}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10,flexWrap:"wrap"}}>
+                    <span style={tx}>Repeat</span>
+                    <input type="number" min="1" max="60" style={numStyle} value={repeatCount} onChange={e=>setRepeatCount(e.target.value)}/>
+                    <span style={tx}>more times</span>
                   </div>
                   <div style={{fontFamily:SF,fontSize:11,color:"#8aabcc",marginTop:5}}>Last one: {lastName}, {MONTHS[last.month]} {last.day} {last.year}{isEdit?" (saving rebuilds the other dates in this series)":""}</div>
                 </div>
@@ -1037,7 +1093,7 @@ function App(){
       if(!entry.recurParentId){
         for(const rid of oldRecurIds) next=removeById(next,rid);
         if(entry.repeat&&entry.repeatCount>0&&!hasNewEnd&&entry.eventType!=="birthday"){
-          for(const d of recurDates(entry.date,entry.repeat,entry.repeatCount)){
+          for(const d of recurDates(entry.date,entry.repeat,entry.repeatCount,entry.repeatInterval,entry.repeatMonthMode)){
             const rid=generateId();
             recurIds.push(rid);
             next=upsert(next,d,{id:rid,title:entry.title,timeStart:entry.timeStart||"",timeEnd:entry.timeEnd||"",note:entry.note||"",colour:entry.colour||DEFAULT_COLOUR,eventType:entry.eventType,reminders:entry.reminders||[],reminders1w:entry.reminders1w||[],recurParentId:entry.id,date:d});
