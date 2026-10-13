@@ -299,6 +299,9 @@ function recurDates(date,mode,count,interval,monthMode){
     if(mode==="weekly"){
       const d=new Date(date.year,date.month,date.day+7*step*i);
       out.push({year:d.getFullYear(),month:d.getMonth(),day:d.getDate()});
+    } else if(mode==="yearly"){
+      const y=date.year+step*i;
+      out.push({year:y,month:date.month,day:Math.min(date.day,getDaysInMonth(y,date.month))});
     } else {
       const m=date.month+step*i;
       const y=date.year+Math.floor(m/12);
@@ -565,7 +568,7 @@ function EventModal({date:initDate, event, prefill, onSave, onDelete, onCopy, on
           <div style={{marginBottom:14,padding:"10px 12px",background:"#f4f8fc",border:"1px solid #dde8f4"}}>
             <div style={{...lbl,marginBottom:8}}>Repeat</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {[["","None"],["weekly","Weekly"],["monthly","Monthly"]].map(function(o){
+              {[["","None"],["weekly","Weekly"],["monthly","Monthly"],["yearly","Yearly"]].map(function(o){
                 var on=repeat===o[0];
                 return(
                   <div key={o[0]} onClick={()=>setRepeat(o[0])} style={{padding:"4px 14px",borderRadius:20,cursor:"pointer",border:`1.5px solid ${on?colour:"#dde4ec"}`,background:on?`${colour}15`:"#f8f9fa",fontFamily:SF,fontSize:12,fontWeight:on?700:400,color:on?colour:"#7a8fa8"}}>{o[1]}</div>
@@ -587,7 +590,7 @@ function EventModal({date:initDate, event, prefill, onSave, onDelete, onCopy, on
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                     <span style={tx}>Every</span>
                     <input type="number" min="1" max="12" style={numStyle} value={repeatInterval} onChange={e=>setRepeatInterval(e.target.value)}/>
-                    <span style={tx}>{repeat==="weekly"?(iv===1?"week":"weeks"):(iv===1?"month":"months")}</span>
+                    <span style={tx}>{repeat==="weekly"?(iv===1?"week":"weeks"):repeat==="yearly"?(iv===1?"year":"years"):(iv===1?"month":"months")}</span>
                   </div>
                   {repeat==="monthly"&&(
                     <div style={{marginTop:10}}>
