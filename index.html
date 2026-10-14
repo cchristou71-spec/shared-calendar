@@ -934,7 +934,7 @@ function PairedGrid({leftDays, rightDays, year, month, allEvents, nowData, onAdd
   }
 
   return(
-    <div style={{width:"100%",flex:1,display:"flex",flexDirection:"column",padding:0,minHeight:0}}>
+    <div style={{width:"100%",flex:1,display:"flex",flexDirection:"column",padding:0,minHeight:0,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch"}}>
       {Array.from({length:maxLen},(_,i)=>{
         const lDay=leftDays[i]||null;
         const rDay=rightDays[i]||null;
@@ -942,7 +942,7 @@ function PairedGrid({leftDays, rightDays, year, month, allEvents, nowData, onAdd
         const rCount=entryCount(rDay,rightArrows);
         const rowWeight=Math.max(36,Math.max(lCount,rCount)*26+10);
         return(
-          <div key={i} style={{display:"flex",flex:`${rowWeight} 1 0`,minHeight:0,borderBottom:"1px solid rgba(0,0,0,0.06)",overflow:"hidden"}}>
+          <div key={i} style={{display:"flex",flex:`${rowWeight} 0 auto`,minHeight:36,borderBottom:"1px solid rgba(0,0,0,0.06)",overflow:"hidden"}}>
             {/* Left day/date — shared column outside both cells */}
             <DayLabel day={lDay} year={year} month={month} nowData={nowData} onAddClick={onAddClick}/>
             {/* Left entry area */}
